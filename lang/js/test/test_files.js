@@ -27,7 +27,8 @@ var files = require('../lib/files'),
     assert = require('assert'),
     fs = require('fs'),
     path = require('path'),
-    tmp = require('tmp');
+    tmp = require('tmp'),
+    stream = require('stream');
 
 var DPATH = path.join(__dirname, 'dat');
 var Header = files.HEADER_TYPE.getRecordConstructor();
@@ -531,6 +532,43 @@ suite('files', function () {
         });
     });
 
+  });
+
+  test('backpressure', function (cb) {
+    var t = createType({
+      type: 'record',
+      name: 'Person',
+      fields: [
+        {name: 'name', type: 'string'},
+        {name: 'age', type: 'int'}
+      ]
+    });
+    var p1 = [];
+    var p2 = [];
+    var outStream = new stream.Writable({
+      objectMode: true,
+      write: function (data, encoding, callback) {
+        setTimeout(function () {
+          p2.push(data);
+          callback();
+        }, 1);
+      },
+      final: function () {
+        assert.equal(p2.length, p1.length);
+        cb();
+      }
+    });
+    var encoder = new streams.BlockEncoder(t);
+    var decoder = new streams.BlockDecoder();
+    encoder.pipe(decoder).pipe(outStream);
+
+    var i;
+    for (i = 0; i < 50; i++) {
+      var person = {name: 'Name' + i, age: i};
+      p1.push(person);
+      encoder.write(person);
+    }
+    encoder.end();
   });
 
   test('createFileDecoder', function (cb) {
